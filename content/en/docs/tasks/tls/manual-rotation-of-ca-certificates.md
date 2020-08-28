@@ -35,29 +35,13 @@ Configurations with a single API server will experience unavailability while the
 
 1. Update *Kubernetes controller manager's* `--root-ca-file` to include both old and new CA and restart controller manager.
 
-   Any service account created after this point will get secrets that include both old and new CAs.
+   Tokens controller in controller manager will update existing service account Secrets with the new CA bundle. Any service account created after this point will get secrets that include both old and new CAs.
 
    {{< note >}}
    Remove the flag `--client-ca-file` from the *Kubernetes controller manager* configuration.
    You can also replace the existing client CA file or change this configuration item to reference a new, updated CA.
    [Issue 1350](https://github.com/kubernetes/kubeadm/issues/1350) tracks an issue with *Kubernetes controller manager* being unable to accept a CA bundle.
    {{< /note >}}
-
-1. Update all service account tokens to include both old and new CA certificates.
-
-   If any pods are started before new CA is used by API servers, they will get this update and trust both old and new CAs.
-
-   ```shell
-   base64_encoded_ca="$(base64 <path to file containing both old and new CAs>)"
-
-   for namespace in $(kubectl get ns --no-headers | awk '{print $1}'); do
-       for token in $(kubectl get secrets --namespace "$namespace" --field-selector type=kubernetes.io/service-account-token -o name); do
-           kubectl get $token --namespace "$namespace" -o yaml | \
-             /bin/sed "s/\(ca.crt:\).*/\1 ${base64_encoded_ca}" | \
-             kubectl apply -f -
-       done
-   done
-   ```
 
 1. Restart all pods using in-cluster configs (ex: kube-proxy, coredns, etc) so they can use the updated certificate authority data from *ServiceAccount* secrets.
 
@@ -146,11 +130,11 @@ Configurations with a single API server will experience unavailability while the
 
 1. Once the cluster functionality is successfully verified:
 
-   1. Update all service account tokens to include new CA certificate only.
-
+   1. Restart the control plane components by removing the old CA from the kubeconfig files and the files against `--client-ca-file`, `--root-ca-file` flags respectively.
+   
+      Tokens controller in controller manager will update existing service account Secrets with just the new CA.
+   
       * All pods using an in-cluster kubeconfig will eventually need to be restarted to pick up the new SA secret for the old CA to be completely untrusted.
-
-   1. Restart the control plane components by removing the old CA from the kubeconfig files and the files against `--client-ca-file`, `--root-ca-file` flags resp.
 
    1. Restart kubelet by removing the old CA from file against the `clientCAFile` flag and kubelet kubeconfig file.
 
